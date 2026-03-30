@@ -241,7 +241,7 @@ def landing_path(source_sys: str, cust_id: str, obj_name: str, load_type: str) -
 def checkpoint_path(layer: str, source_sys: str, cust_id: str, obj_name: str) -> str:
     """Returns S3 checkpoint path for Auto Loader or CDF streams."""
     # NEW FORMAT: s3://.../layers/{layer}/checkpoint/{source_sys}/{cust_id}/{obj_name}/
-    return f"{bucket_path}/layers_test/{layer}/checkpoint/{source_sys}/{cust_id}/{obj_name}/"
+    return f"{bucket_path}/layers/{layer}/checkpoint/{source_sys}/{cust_id}/{obj_name}/"
 
 def bronze_table(cust_id: str, obj_name: str) -> str:
     """Returns fully qualified bronze table name."""
