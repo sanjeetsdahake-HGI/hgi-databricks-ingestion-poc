@@ -1,0 +1,507 @@
+# =============================================================================
+# Databricks Asset Bundle — HGI Lakehouse Pipeline
+# File     : master_jobs.yml
+# Location : /HGI-Lakehouse-Pipeline/jobs/master_jobs.yml
+#
+# Jobs covered:
+#   1. Bronze_Historical    — all 8 objects parallel (on-demand)
+#   2. Bronze_Incremental   — all 8 objects parallel (every 15 min)
+#   3. Silver_CDF           — all 8 objects parallel (trigger after bronze)
+#   4. Silver_Map           — 11 map tasks in dependency order
+#
+# Bundle root (databricks.yml in project root):
+#   bundle:
+#     name: hgi-lakehouse
+#   workspace:
+#     host: https://<your-workspace>.azuredatabricks.net
+#   include:
+#     - jobs/master_jobs.yml
+#
+# Deploy:  databricks bundle deploy --target dev
+# Run:     databricks bundle run Bronze_Historical --target dev
+# =============================================================================
+
+bundle:
+  name: hgi-lakehouse
+
+variables:
+  ws_root:
+    default: /Workspace/Users/ayushgunjal2003@gmail.com/HGI-Lakehouse-Pipeline
+  customer_id:
+    default: cust_001
+
+# ── Reusable cluster configs ──────────────────────────────────────────────────
+# Historical bronze: r6id.2xlarge (64GB RAM) — best for MERGE on large batches
+# Incremental bronze: m6id.xlarge (16GB RAM) — cost-optimised for small deltas
+# Silver CDF: r6id.2xlarge — CDF MERGEs need memory
+# Silver Map: r6id.4xlarge (128GB RAM) — 1B event GROUP BYs need headroom
+
+resources:
+  jobs:
+
+    # =========================================================================
+    # JOB 1: Bronze Historical  (run once per new customer)
+    # All 8 objects run IN PARALLEL — no dependency edges
+    # =========================================================================
+    Bronze_Historical:
+      name: "[${bundle.target}] Bronze Historical: Landing → Bronze"
+      queue: {enabled: true}
+      max_concurrent_runs: 1
+      email_notifications:
+        on_failure: [ayushgunjal2003@gmail.com]
+
+      job_clusters:
+        - job_cluster_key: bronze_hist_cluster
+          new_cluster:
+            spark_version: 15.4.x-scala2.12
+            node_type_id: r6id.2xlarge
+            driver_node_type_id: r6id.xlarge
+            autoscale: {min_workers: 4, max_workers: 12}
+            spark_conf:
+              spark.sql.adaptive.enabled: "true"
+              spark.sql.adaptive.coalescePartitions.enabled: "true"
+              spark.sql.adaptive.advisoryPartitionSizeInBytes: "134217728"
+              spark.sql.shuffle.partitions: "400"
+              spark.databricks.delta.merge.enableLowShuffle: "true"
+              spark.databricks.delta.optimizeWrite.enabled: "true"
+              spark.databricks.delta.autoCompact.enabled: "true"
+              spark.hadoop.fs.s3a.fast.upload: "true"
+              spark.hadoop.fs.s3a.threads.max: "64"
+              spark.executor.memoryOverhead: "4g"
+            aws_attributes:
+              availability: SPOT_WITH_FALLBACK
+              spot_bid_price_percent: 100
+              ebs_volume_type: GENERAL_PURPOSE_SSD
+              ebs_volume_count: 2
+              ebs_volume_size: 200
+
+      tasks:
+        - task_key: bronze_account
+          job_cluster_key: bronze_hist_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/02_Bronze_Layer/bronze_account
+            base_parameters:
+              customer_id: ${var.customer_id}
+              load_type: historical
+              max_files_per_trigger: "500"
+            source: WORKSPACE
+          max_retries: 2
+          min_retry_interval_millis: 30000
+
+        - task_key: bronze_contact
+          job_cluster_key: bronze_hist_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/02_Bronze_Layer/bronze_contact
+            base_parameters:
+              customer_id: ${var.customer_id}
+              load_type: historical
+              max_files_per_trigger: "500"
+            source: WORKSPACE
+          max_retries: 2
+          min_retry_interval_millis: 30000
+
+        - task_key: bronze_opportunity
+          job_cluster_key: bronze_hist_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/02_Bronze_Layer/bronze_opportunity
+            base_parameters:
+              customer_id: ${var.customer_id}
+              load_type: historical
+              max_files_per_trigger: "500"
+            source: WORKSPACE
+          max_retries: 2
+          min_retry_interval_millis: 30000
+
+        - task_key: bronze_task
+          job_cluster_key: bronze_hist_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/02_Bronze_Layer/bronze_task
+            base_parameters:
+              customer_id: ${var.customer_id}
+              load_type: historical
+              max_files_per_trigger: "300"
+            source: WORKSPACE
+          max_retries: 2
+          min_retry_interval_millis: 30000
+
+        - task_key: bronze_campaign
+          job_cluster_key: bronze_hist_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/02_Bronze_Layer/bronze_campaign
+            base_parameters:
+              customer_id: ${var.customer_id}
+              load_type: historical
+              max_files_per_trigger: "200"
+            source: WORKSPACE
+          max_retries: 2
+          min_retry_interval_millis: 30000
+
+        - task_key: bronze_campaignmember
+          job_cluster_key: bronze_hist_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/02_Bronze_Layer/bronze_campaignmember
+            base_parameters:
+              customer_id: ${var.customer_id}
+              load_type: historical
+              max_files_per_trigger: "300"
+            source: WORKSPACE
+          max_retries: 2
+          min_retry_interval_millis: 30000
+
+        - task_key: bronze_user
+          job_cluster_key: bronze_hist_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/02_Bronze_Layer/bronze_user
+            base_parameters:
+              customer_id: ${var.customer_id}
+              load_type: historical
+              max_files_per_trigger: "200"
+            source: WORKSPACE
+          max_retries: 2
+          min_retry_interval_millis: 30000
+
+        - task_key: bronze_events
+          job_cluster_key: bronze_hist_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/02_Bronze_Layer/bronze_events
+            base_parameters:
+              customer_id: ${var.customer_id}
+              load_type: historical
+              max_files_per_trigger: "1000"
+            source: WORKSPACE
+          max_retries: 2
+          min_retry_interval_millis: 30000
+
+    # =========================================================================
+    # JOB 2: Bronze Incremental  (every 15 minutes, all 8 objects parallel)
+    # =========================================================================
+    Bronze_Incremental:
+      name: "[${bundle.target}] Bronze Incremental: Landing → Bronze"
+      trigger:
+        periodic: {interval: 15, unit: MINUTES}
+      max_concurrent_runs: 1
+      email_notifications:
+        on_failure: [ayushgunjal2003@gmail.com]
+
+      job_clusters:
+        - job_cluster_key: bronze_incr_cluster
+          new_cluster:
+            spark_version: 15.4.x-scala2.12
+            node_type_id: m6id.xlarge
+            driver_node_type_id: m6id.large
+            num_workers: 4
+            spark_conf:
+              spark.sql.adaptive.enabled: "true"
+              spark.sql.shuffle.partitions: "32"
+              spark.databricks.delta.merge.enableLowShuffle: "true"
+              spark.hadoop.fs.s3a.fast.upload: "true"
+            aws_attributes:
+              availability: SPOT_WITH_FALLBACK
+              spot_bid_price_percent: 100
+
+      tasks:
+        - task_key: bronze_account_incr
+          job_cluster_key: bronze_incr_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/02_Bronze_Layer/bronze_account
+            base_parameters: {customer_id: "${var.customer_id}", load_type: incremental, max_files_per_trigger: "50"}
+            source: WORKSPACE
+
+        - task_key: bronze_contact_incr
+          job_cluster_key: bronze_incr_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/02_Bronze_Layer/bronze_contact
+            base_parameters: {customer_id: "${var.customer_id}", load_type: incremental, max_files_per_trigger: "50"}
+            source: WORKSPACE
+
+        - task_key: bronze_opportunity_incr
+          job_cluster_key: bronze_incr_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/02_Bronze_Layer/bronze_opportunity
+            base_parameters: {customer_id: "${var.customer_id}", load_type: incremental, max_files_per_trigger: "50"}
+            source: WORKSPACE
+
+        - task_key: bronze_task_incr
+          job_cluster_key: bronze_incr_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/02_Bronze_Layer/bronze_task
+            base_parameters: {customer_id: "${var.customer_id}", load_type: incremental, max_files_per_trigger: "50"}
+            source: WORKSPACE
+
+        - task_key: bronze_campaign_incr
+          job_cluster_key: bronze_incr_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/02_Bronze_Layer/bronze_campaign
+            base_parameters: {customer_id: "${var.customer_id}", load_type: incremental, max_files_per_trigger: "30"}
+            source: WORKSPACE
+
+        - task_key: bronze_campaignmember_incr
+          job_cluster_key: bronze_incr_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/02_Bronze_Layer/bronze_campaignmember
+            base_parameters: {customer_id: "${var.customer_id}", load_type: incremental, max_files_per_trigger: "50"}
+            source: WORKSPACE
+
+        - task_key: bronze_user_incr
+          job_cluster_key: bronze_incr_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/02_Bronze_Layer/bronze_user
+            base_parameters: {customer_id: "${var.customer_id}", load_type: incremental, max_files_per_trigger: "30"}
+            source: WORKSPACE
+
+        - task_key: bronze_events_incr
+          job_cluster_key: bronze_incr_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/02_Bronze_Layer/bronze_events
+            base_parameters: {customer_id: "${var.customer_id}", load_type: incremental, max_files_per_trigger: "100"}
+            source: WORKSPACE
+
+    # =========================================================================
+    # JOB 3: Silver CDF  (all 8 objects parallel, run after Bronze)
+    # =========================================================================
+    Silver_CDF:
+      name: "[${bundle.target}] Silver CDF: Bronze → Silver base tables"
+      queue: {enabled: true}
+      max_concurrent_runs: 1
+      email_notifications:
+        on_failure: [ayushgunjal2003@gmail.com]
+
+      job_clusters:
+        - job_cluster_key: silver_cdf_cluster
+          new_cluster:
+            spark_version: 15.4.x-scala2.12
+            node_type_id: r6id.2xlarge
+            driver_node_type_id: m6id.xlarge
+            autoscale: {min_workers: 4, max_workers: 10}
+            spark_conf:
+              spark.sql.adaptive.enabled: "true"
+              spark.sql.shuffle.partitions: "400"
+              spark.databricks.delta.merge.enableLowShuffle: "true",
+              spark.databricks.delta.readChangeFeed.maxFilesPerTrigger: "200"
+              spark.executor.memoryOverhead: "4g"
+            aws_attributes:
+              availability: SPOT_WITH_FALLBACK
+              spot_bid_price_percent: 100
+              ebs_volume_count: 2
+              ebs_volume_size: 200
+
+      tasks:
+        - task_key: silver_account
+          job_cluster_key: silver_cdf_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/03_Silver_Layer/02a_silver_account
+            base_parameters: {customer_id: "${var.customer_id}", starting_version: "0"}
+            source: WORKSPACE
+          max_retries: 2
+          min_retry_interval_millis: 30000
+
+        - task_key: silver_contact
+          job_cluster_key: silver_cdf_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/03_Silver_Layer/02a_silver_contact
+            base_parameters: {customer_id: "${var.customer_id}", starting_version: "0"}
+            source: WORKSPACE
+          max_retries: 2
+          min_retry_interval_millis: 30000
+
+        - task_key: silver_opportunity
+          job_cluster_key: silver_cdf_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/03_Silver_Layer/02a_silver_opportunity
+            base_parameters: {customer_id: "${var.customer_id}", starting_version: "0"}
+            source: WORKSPACE
+          max_retries: 2
+          min_retry_interval_millis: 30000
+
+        - task_key: silver_task
+          job_cluster_key: silver_cdf_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/03_Silver_Layer/02a_silver_task
+            base_parameters: {customer_id: "${var.customer_id}", starting_version: "0"}
+            source: WORKSPACE
+          max_retries: 2
+          min_retry_interval_millis: 30000
+
+        - task_key: silver_campaign
+          job_cluster_key: silver_cdf_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/03_Silver_Layer/02a_silver_campaign
+            base_parameters: {customer_id: "${var.customer_id}", starting_version: "0"}
+            source: WORKSPACE
+          max_retries: 2
+          min_retry_interval_millis: 30000
+
+        - task_key: silver_campaignmember
+          job_cluster_key: silver_cdf_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/03_Silver_Layer/02a_silver_campaignmember
+            base_parameters: {customer_id: "${var.customer_id}", starting_version: "0"}
+            source: WORKSPACE
+          max_retries: 2
+          min_retry_interval_millis: 30000
+
+        - task_key: silver_user
+          job_cluster_key: silver_cdf_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/03_Silver_Layer/02a_silver_user
+            base_parameters: {customer_id: "${var.customer_id}", starting_version: "0"}
+            source: WORKSPACE
+          max_retries: 2
+          min_retry_interval_millis: 30000
+
+        - task_key: silver_events
+          job_cluster_key: silver_cdf_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/03_Silver_Layer/02a_silver_events
+            base_parameters: {customer_id: "${var.customer_id}", starting_version: "0"}
+            source: WORKSPACE
+          max_retries: 2
+          min_retry_interval_millis: 30000
+
+    # =========================================================================
+    # JOB 4: Silver Map  (11 notebooks in strict dependency order)
+    # =========================================================================
+    Silver_Map:
+      name: "[${bundle.target}] Silver Map: Map Layer Derivations"
+      queue: {enabled: true}
+      max_concurrent_runs: 1
+      email_notifications:
+        on_failure: [ayushgunjal2003@gmail.com]
+
+      job_clusters:
+        - job_cluster_key: silver_map_cluster
+          new_cluster:
+            spark_version: 15.4.x-scala2.12
+            node_type_id: r6id.4xlarge
+            driver_node_type_id: r6id.2xlarge
+            autoscale: {min_workers: 6, max_workers: 16}
+            spark_conf:
+              spark.sql.adaptive.enabled: "true"
+              spark.sql.shuffle.partitions: "800"
+              spark.sql.autoBroadcastJoinThreshold: "52428800"
+              spark.databricks.delta.merge.enableLowShuffle: "true"
+              spark.executor.memoryOverhead: "8g"
+            aws_attributes:
+              availability: SPOT_WITH_FALLBACK
+              spot_bid_price_percent: 100
+              ebs_volume_count: 4
+              ebs_volume_size: 200
+
+      tasks:
+        - task_key: map_01_contacts_all
+          job_cluster_key: silver_map_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/03_Silver_Layer/02b_map_01_contacts_all
+            base_parameters: {customer_id: "${var.customer_id}"}
+            source: WORKSPACE
+          max_retries: 1
+
+        - task_key: map_02_accounts_all
+          depends_on: [{task_key: map_01_contacts_all}]
+          job_cluster_key: silver_map_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/03_Silver_Layer/02b_map_02_accounts_all
+            base_parameters: {customer_id: "${var.customer_id}"}
+            source: WORKSPACE
+          max_retries: 1
+
+        - task_key: map_03_crm_events
+          depends_on: [{task_key: map_01_contacts_all}]
+          job_cluster_key: silver_map_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/03_Silver_Layer/02b_map_03_crm_events
+            base_parameters: {customer_id: "${var.customer_id}"}
+            source: WORKSPACE
+          max_retries: 1
+
+        - task_key: map_04_events_mapping
+          depends_on: [{task_key: map_03_crm_events}, {task_key: map_02_accounts_all}]
+          job_cluster_key: silver_map_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/03_Silver_Layer/02b_map_04_events_mapping
+            base_parameters: {customer_id: "${var.customer_id}"}
+            source: WORKSPACE
+          max_retries: 1
+
+        - task_key: map_05_contacts_to_accounts
+          depends_on: [{task_key: map_02_accounts_all}]
+          job_cluster_key: silver_map_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/03_Silver_Layer/02b_map_05_contacts_to_accounts
+            base_parameters: {customer_id: "${var.customer_id}"}
+            source: WORKSPACE
+          max_retries: 1
+
+        - task_key: map_06_accounts_attributes
+          depends_on: [{task_key: map_02_accounts_all}]
+          job_cluster_key: silver_map_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/03_Silver_Layer/02b_map_06_accounts_attributes
+            base_parameters: {customer_id: "${var.customer_id}"}
+            source: WORKSPACE
+          max_retries: 1
+
+        - task_key: map_07_contacts_attributes
+          depends_on: [{task_key: map_01_contacts_all}]
+          job_cluster_key: silver_map_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/03_Silver_Layer/02b_map_07_contacts_attributes
+            base_parameters: {customer_id: "${var.customer_id}"}
+            source: WORKSPACE
+          max_retries: 1
+
+        - task_key: map_08_email_events_mapped
+          depends_on: [{task_key: map_04_events_mapping}]
+          job_cluster_key: silver_map_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/03_Silver_Layer/02b_map_08_email_events_mapped
+            base_parameters: {customer_id: "${var.customer_id}"}
+            source: WORKSPACE
+          max_retries: 1
+
+        - task_key: map_09_domain_events_mapped
+          depends_on: [{task_key: map_04_events_mapping}]
+          job_cluster_key: silver_map_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/03_Silver_Layer/02b_map_09_domain_events_mapped
+            base_parameters: {customer_id: "${var.customer_id}"}
+            source: WORKSPACE
+          max_retries: 1
+
+        - task_key: map_10_account_events_mapped
+          depends_on: [{task_key: map_04_events_mapping}, {task_key: map_05_contacts_to_accounts}]
+          job_cluster_key: silver_map_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/03_Silver_Layer/02b_map_10_account_events_mapped
+            base_parameters: {customer_id: "${var.customer_id}"}
+            source: WORKSPACE
+          max_retries: 1
+
+        - task_key: map_11_audiences_conversion
+          depends_on:
+            - task_key: map_08_email_events_mapped
+            - task_key: map_09_domain_events_mapped
+            - task_key: map_10_account_events_mapped
+          job_cluster_key: silver_map_cluster
+          notebook_task:
+            notebook_path: ${var.ws_root}/03_Silver_Layer/02b_map_11_audiences_conversion
+            base_parameters: {customer_id: "${var.customer_id}"}
+            source: WORKSPACE
+          max_retries: 1
+
+# =============================================================================
+# SERVERLESS OVERRIDE
+# To run jobs on Serverless instead of Job Cluster:
+#   1. Remove the job_clusters block from the job
+#   2. Replace job_cluster_key with environment_key: serverless on each task
+#   3. Lower max_files_per_trigger to 10 in base_parameters for 2X-Small
+#
+# Example:
+#   tasks:
+#     - task_key: bronze_account
+#       environment_key: serverless           # ← replaces job_cluster_key
+#       notebook_task:
+#         notebook_path: ...
+#         base_parameters:
+#           max_files_per_trigger: "10"       # ← smaller for Serverless memory
+# =============================================================================
