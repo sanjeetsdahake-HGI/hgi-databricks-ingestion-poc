@@ -218,6 +218,7 @@ try:
     ).drop("_change_type", "_commit_version", "_commit_timestamp")
 
     record_count = df_incremental.count()
+    dbutils.jobs.taskValues.set(key=object_name, value=record_count)
     print(f"📊 Changed records (via CDF): {record_count:,}")
 
 except Exception as e:
@@ -247,6 +248,7 @@ except Exception as e:
     print(f"📊 Fallback changed records: {record_count:,}")
 
 if record_count == 0:
+    dbutils.jobs.taskValues.set(key=object_name, value=0)
     print("✅ No changed records found. Exiting.")
     pm.save(status="SUCCESS", rows_processed=0)
     dbutils.notebook.exit("0")
