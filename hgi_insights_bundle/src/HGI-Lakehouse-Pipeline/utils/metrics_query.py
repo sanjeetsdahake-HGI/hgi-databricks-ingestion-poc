@@ -19,7 +19,7 @@ class MetricsQuery:
         from utils.metrics_query import MetricsQuery
 
         mq = MetricsQuery(spark)
-        mq.save_stats(days=30, rows_processed=df.count())
+        mq.save_stats(days=1, rows_processed=df.count())
     """
 
     # ── Catalog config ─────────────────────────────────────────────────

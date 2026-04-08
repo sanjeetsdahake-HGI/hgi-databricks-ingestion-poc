@@ -29,6 +29,11 @@ silver_schema   = "silver"
 meta_catalog    = "ingestion_metadata"   # watermarks table
 sv              = f"{silver_catalog}.{silver_schema}"    # shorthand used everywhere
 
+
+# =============================================================================
+# 1. gcp secerts
+# =============================================================================
+bq_native_table = 'v4c-bigquery.v4c_bigquery_dataset.event_raw'
 # =============================================================================
 # 3. Bronze Table Names
 #    Key change: BQ events → events_raw  (NOT crm_events)
@@ -112,7 +117,7 @@ CDF_STARTING_VERSION      = "0"    # "0" = replay all history; set to specific v
 # =============================================================================
 # 8. Watermark Settings
 # =============================================================================
-WATERMARK_LOOKBACK_MINUTES = 1     # subtract N minutes before storing watermark
+WATERMARK_LOOKBACK_MINUTES = 0     # exact watermark — incremental uses strict > to prevent duplicates
 
 # =============================================================================
 # 9. Free Email Domains  (contacts_to_accounts Phase 3 matching)
@@ -144,6 +149,7 @@ FREE_EMAIL_DOMAINS = frozenset({
 # =============================================================================
 DELTA_TBLPROPS_BRONZE = """
     TBLPROPERTIES (
+        'delta.enableChangeDataFeed'           = 'true',
         'delta.enableDeletionVectors'          = 'true',
         'delta.autoOptimize.optimizeWrite'     = 'true',
         'delta.autoOptimize.autoCompact'       = 'true',
@@ -154,6 +160,7 @@ DELTA_TBLPROPS_BRONZE = """
 
 DELTA_TBLPROPS_SILVER = """
     TBLPROPERTIES (
+        'delta.enableChangeDataFeed'           = 'true',
         'delta.enableDeletionVectors'          = 'true',
         'delta.autoOptimize.optimizeWrite'     = 'true',
         'delta.autoOptimize.autoCompact'       = 'true',
@@ -164,6 +171,16 @@ DELTA_TBLPROPS_SILVER = """
 
 DELTA_TBLPROPS_MAP = """
     TBLPROPERTIES (
+        'delta.enableChangeDataFeed'           = 'true',
+        'delta.enableDeletionVectors'          = 'true',
+        'delta.autoOptimize.optimizeWrite'     = 'true',
+        'delta.autoOptimize.autoCompact'       = 'true'
+    )
+"""
+
+DELTA_TBLPROPS_GOLD = """
+    TBLPROPERTIES (
+        'delta.enableChangeDataFeed'           = 'true',
         'delta.enableDeletionVectors'          = 'true',
         'delta.autoOptimize.optimizeWrite'     = 'true',
         'delta.autoOptimize.autoCompact'       = 'true'
